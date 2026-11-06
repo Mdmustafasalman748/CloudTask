@@ -1,34 +1,31 @@
+using CloudTask.Domain.Entities;
 using CloudTask.Domain.Enums;
-using System.Collections.Generic;
 using System;
 
-namespace CloudTask.Domain.Entities;
+namespace CloudTask.Tests.Domain;
 
-public class Project
+public class ProjectTests
 {
-    public int Id { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public string? Description { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
-    public int OwnerId { get; set; }
-    public User? Owner { get; set; }
-
-    public List<TaskItem> Tasks { get; set; } = new();
-
-    public TaskItem AddTask(string title, TaskPriority priority = TaskPriority.Medium)
+    [Fact]
+    public void AddTask_AddsTaskToProject()
     {
-        if (string.IsNullOrWhiteSpace(title))
-            throw new ArgumentException("Task title is required.", nameof(title));
+        var project = new Project { Id = 1, Name = "Demo" };
 
-        var task = new TaskItem
-        {
-            Title = title.Trim(),
-            Priority = priority,
-            ProjectId = Id
-        };
+        var task = project.AddTask("  Design schema  ", TaskPriority.High);
 
-        Tasks.Add(task);
-        return task;
+        Assert.Single(project.Tasks);
+        Assert.Equal("Design schema", task.Title);
+        Assert.Equal(TaskPriority.High, task.Priority);
+        Assert.Equal(1, task.ProjectId);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void AddTask_WithEmptyTitle_Throws(string title)
+    {
+        var project = new Project { Id = 1, Name = "Demo" };
+
+        Assert.Throws<ArgumentException>(() => project.AddTask(title));
     }
 }
