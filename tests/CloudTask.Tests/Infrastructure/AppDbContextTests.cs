@@ -2,6 +2,8 @@ using CloudTask.Domain.Entities;
 using CloudTask.Domain.Enums;
 using CloudTask.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using System.Threading.Tasks;
+using System;
 
 namespace CloudTask.Tests.Infrastructure;
 
