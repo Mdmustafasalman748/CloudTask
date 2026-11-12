@@ -1,8 +1,8 @@
 using CloudTask.Api.Dtos;
-using CloudTask.Domain.Entities;
-using CloudTask.Infrastructure.Persistence;
+using CloudTask.Api.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace CloudTask.Api.Controllers;
 
@@ -10,82 +10,36 @@ namespace CloudTask.Api.Controllers;
 [Route("api/[controller]")]
 public class ProjectsController : ControllerBase
 {
-    private readonly AppDbContext _db;
+    private readonly IProjectService _projects;
 
-    public ProjectsController(AppDbContext db) => _db = db;
+    public ProjectsController(IProjectService projects) => _projects = projects;
 
     [HttpGet]
-    public async Task<ActionResult<List<ProjectResponse>>> GetAll()
-    {
-        var projects = await _db.Projects
-            .AsNoTracking()
-            .OrderBy(p => p.Id)
-            .Select(p => new ProjectResponse(
-                p.Id, p.Name, p.Description, p.CreatedAt, p.OwnerId, p.Tasks.Count))
-            .ToListAsync();
-
-        return Ok(projects);
-    }
+    public async Task<ActionResult<List<ProjectResponse>>> GetAll() =>
+        Ok(await _projects.GetAllAsync());
 
     [HttpGet("{id:int}")]
-    public async Task<ActionResult<ProjectResponse>> GetById(int id)
-    {
-        var project = await _db.Projects
-            .AsNoTracking()
-            .Where(p => p.Id == id)
-            .Select(p => new ProjectResponse(
-                p.Id, p.Name, p.Description, p.CreatedAt, p.OwnerId, p.Tasks.Count))
-            .FirstOrDefaultAsync();
-
-        return project is null ? NotFound() : Ok(project);
-    }
+    public async Task<ActionResult<ProjectResponse>> GetById(int id) =>
+        Ok(await _projects.GetByIdAsync(id));
 
     [HttpPost]
     public async Task<ActionResult<ProjectResponse>> Create(CreateProjectRequest request)
     {
-        var ownerExists = await _db.Users.AnyAsync(u => u.Id == request.OwnerId);
-        if (!ownerExists)
-            return BadRequest(new { error = $"User {request.OwnerId} does not exist." });
-
-        var project = new Project
-        {
-            Name = request.Name.Trim(),
-            Description = request.Description,
-            OwnerId = request.OwnerId
-        };
-
-        _db.Projects.Add(project);
-        await _db.SaveChangesAsync();
-
-        var response = new ProjectResponse(
-            project.Id, project.Name, project.Description,
-            project.CreatedAt, project.OwnerId, 0);
-
-        return CreatedAtAction(nameof(GetById), new { id = project.Id }, response);
+        var created = await _projects.CreateAsync(request);
+        return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
 
     [HttpPut("{id:int}")]
     public async Task<IActionResult> Update(int id, UpdateProjectRequest request)
     {
-        var project = await _db.Projects.FindAsync(id);
-        if (project is null) return NotFound();
-
-        project.Name = request.Name.Trim();
-        project.Description = request.Description;
-        await _db.SaveChangesAsync();
-
+        await _projects.UpdateAsync(id, request);
         return NoContent();
     }
 
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var project = await _db.Projects.FindAsync(id);
-        if (project is null) return NotFound();
-
-        _db.Projects.Remove(project);
-        await _db.SaveChangesAsync();
-
+        await _projects.DeleteAsync(id);
         return NoContent();
     }
 }

@@ -1,11 +1,14 @@
 using System.Text.Json.Serialization;
+using CloudTask.Api.Common;
+using CloudTask.Api.Services;
 using CloudTask.Infrastructure;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -14,7 +17,20 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.");
 
 builder.Services.AddInfrastructure(connectionString);
+
+// Error handling (Day 10)
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+// Application services (Day 10)
+builder.Services.AddScoped<IProjectService, ProjectService>();
+builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<ITaskService, TaskService>();
+
 var app = builder.Build();
+
+// Must come first so it wraps everything below it
+app.UseExceptionHandler();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -30,4 +46,5 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
 public partial class Program { }
