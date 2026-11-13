@@ -1,7 +1,7 @@
+using CloudTask.Api.Common;
 using CloudTask.Api.Dtos;
 using CloudTask.Api.Services;
 using Microsoft.AspNetCore.Mvc;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace CloudTask.Api.Controllers;
@@ -15,13 +15,14 @@ public class ProjectsController : ControllerBase
     public ProjectsController(IProjectService projects) => _projects = projects;
 
     [HttpGet]
-    public async Task<ActionResult<List<ProjectResponse>>> GetAll() =>
-        Ok(await _projects.GetAllAsync());
-
-    [HttpGet]
     public async Task<ActionResult<PagedResult<ProjectResponse>>> GetAll(
-    [FromQuery] ProjectQuery query) =>
-    Ok(await _projects.GetAllAsync(query));
+        [FromQuery] ProjectQuery query) =>
+        Ok(await _projects.GetAllAsync(query));
+
+    [HttpGet("{id:int}")]
+    public async Task<ActionResult<ProjectResponse>> GetById(int id) =>
+        Ok(await _projects.GetByIdAsync(id));
+
     [HttpPost]
     public async Task<ActionResult<ProjectResponse>> Create(CreateProjectRequest request)
     {
