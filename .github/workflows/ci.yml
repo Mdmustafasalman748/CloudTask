@@ -9,6 +9,22 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "CiTestPass123x"
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P CiTestPass123x -C -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 20s
+
     steps:
       - uses: actions/checkout@v4
 
@@ -24,6 +40,8 @@ jobs:
         run: dotnet build --no-restore -c Release
 
       - name: Test with coverage
+        env:
+          TEST_SQL_CONNECTION: "Server=localhost,1433;User Id=sa;Password=CiTestPass123x;TrustServerCertificate=True"
         run: dotnet test --no-build -c Release --collect:"XPlat Code Coverage" --results-directory ./coverage
 
       - name: Install ReportGenerator
