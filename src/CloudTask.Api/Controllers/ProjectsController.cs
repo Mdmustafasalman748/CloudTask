@@ -18,10 +18,10 @@ public class ProjectsController : ControllerBase
     public async Task<ActionResult<List<ProjectResponse>>> GetAll() =>
         Ok(await _projects.GetAllAsync());
 
-    [HttpGet("{id:int}")]
-    public async Task<ActionResult<ProjectResponse>> GetById(int id) =>
-        Ok(await _projects.GetByIdAsync(id));
-
+    [HttpGet]
+    public async Task<ActionResult<PagedResult<ProjectResponse>>> GetAll(
+    [FromQuery] ProjectQuery query) =>
+    Ok(await _projects.GetAllAsync(query));
     [HttpPost]
     public async Task<ActionResult<ProjectResponse>> Create(CreateProjectRequest request)
     {

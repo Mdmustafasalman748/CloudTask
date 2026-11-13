@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http.Json;
+using System.Threading.Tasks;
 using CloudTask.Api.Dtos;
 
 namespace CloudTask.Tests.Api;
@@ -129,4 +131,4 @@ public class TasksEndpointTests : IClassFixture<ApiFactory>
         Assert.Equal(2, all!.Count);
         Assert.All(all, t => Assert.Equal(projectId, t.ProjectId));
     }
-}
+}   
