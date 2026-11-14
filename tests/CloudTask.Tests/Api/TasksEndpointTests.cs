@@ -1,7 +1,7 @@
-using System.Collections.Generic;
 using System.Net;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
+using CloudTask.Api.Common;
 using CloudTask.Api.Dtos;
 
 namespace CloudTask.Tests.Api;
@@ -122,13 +122,27 @@ public class TasksEndpointTests : IClassFixture<ApiFactory>
         await CreateTaskAsync(otherProjectId, "Other project's task");
         await _client.PostAsync($"/api/projects/{projectId}/tasks/{started.Id}/start", null);
 
-        var inProgress = await _client.GetFromJsonAsync<List<TaskResponse>>(
+        var inProgress = await _client.GetFromJsonAsync<PagedResult<TaskResponse>>(
             $"/api/projects/{projectId}/tasks?status=InProgress");
-        var all = await _client.GetFromJsonAsync<List<TaskResponse>>(
+        var all = await _client.GetFromJsonAsync<PagedResult<TaskResponse>>(
             $"/api/projects/{projectId}/tasks");
 
-        Assert.Single(inProgress!);
-        Assert.Equal(2, all!.Count);
-        Assert.All(all, t => Assert.Equal(projectId, t.ProjectId));
+        Assert.Single(inProgress!.Items);
+        Assert.Equal(2, all!.Items.Count);
+        Assert.All(all.Items, t => Assert.Equal(projectId, t.ProjectId));
     }
-}   
+
+    [Fact]
+    public async Task WrongProject_Returns404_ForGetAndStart()
+    {
+        var projectA = await CreateProjectAsync();
+        var projectB = await CreateProjectAsync();
+        var task = await CreateTaskAsync(projectA);
+
+        var get = await _client.GetAsync($"/api/projects/{projectB}/tasks/{task.Id}");
+        var start = await _client.PostAsync($"/api/projects/{projectB}/tasks/{task.Id}/start", null);
+
+        Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, start.StatusCode);
+    }
+}

@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel.DataAnnotations;
 using CloudTask.Domain.Entities;
 using CloudTask.Domain.Enums;
@@ -36,3 +37,11 @@ public class AssignTaskRequest
     [Range(1, int.MaxValue)]
     public int UserId { get; set; }
 }
+public record AssignedTaskResponse(
+    int Id,
+    string Title,
+    string Status,
+    string Priority,
+    int ProjectId,
+    string ProjectName,
+    DateTime CreatedAt);

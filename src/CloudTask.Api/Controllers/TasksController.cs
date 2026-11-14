@@ -1,8 +1,7 @@
+using CloudTask.Api.Common;
 using CloudTask.Api.Dtos;
 using CloudTask.Api.Services;
-using CloudTask.Domain.Enums;
 using Microsoft.AspNetCore.Mvc;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace CloudTask.Api.Controllers;
@@ -16,9 +15,9 @@ public class TasksController : ControllerBase
     public TasksController(ITaskService tasks) => _tasks = tasks;
 
     [HttpGet]
-    public async Task<ActionResult<List<TaskResponse>>> GetAll(
-        int projectId, [FromQuery] TaskItemStatus? status) =>
-        Ok(await _tasks.GetAllAsync(projectId, status));
+    public async Task<ActionResult<PagedResult<TaskResponse>>> GetAll(
+        int projectId, [FromQuery] TaskQuery query) =>
+        Ok(await _tasks.GetAllAsync(projectId, query));
 
     [HttpGet("{id:int}")]
     public async Task<ActionResult<TaskResponse>> GetById(int projectId, int id) =>
