@@ -1,9 +1,10 @@
+using System;
+using System.Text.Json.Serialization;
 using CloudTask.Api.Common;
 using CloudTask.Api.Services;
 using CloudTask.Infrastructure;
 using CloudTask.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,7 +25,7 @@ builder.Services.AddSwaggerGen(c =>
     }
 });
 
-// Database
+// Database + Identity
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.");
 
@@ -38,6 +39,7 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ITaskService, TaskService>();
+// builder.Services.AddScoped<IAuthService, AuthService>();   // uncomment in Day 15 Task 3
 
 // Health checks: "ready" includes the database
 builder.Services.AddHealthChecks()

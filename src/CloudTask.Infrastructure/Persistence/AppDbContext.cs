@@ -1,18 +1,25 @@
 using CloudTask.Domain.Entities;
+using CloudTask.Infrastructure.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace CloudTask.Infrastructure.Persistence;
 
-public class AppDbContext : DbContext
+public class AppDbContext : IdentityDbContext<AppIdentityUser>
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
-    public DbSet<User> Users => Set<User>();
+    // "new" because IdentityDbContext already has a Users property (the login table).
+    // Ours is the domain profile.
+    public new DbSet<User> Users => Set<User>();
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<TaskItem> Tasks => Set<TaskItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        // Must be first: maps the Identity tables (AspNetUsers, AspNetRoles, ...)
+        base.OnModelCreating(modelBuilder);
+
         modelBuilder.Entity<User>(e =>
         {
             e.Property(u => u.Email).IsRequired().HasMaxLength(256);
@@ -52,6 +59,12 @@ public class AppDbContext : DbContext
                 .WithMany(u => u.AssignedTasks)
                 .HasForeignKey(t => t.AssigneeId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // One domain profile can have at most one login
+        modelBuilder.Entity<AppIdentityUser>(e =>
+        {
+            e.HasIndex(u => u.UserId).IsUnique();
         });
     }
 }

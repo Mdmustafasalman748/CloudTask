@@ -6,7 +6,8 @@
   <ImplicitUsings>enable</ImplicitUsings>
   <GenerateDocumentationFile>true</GenerateDocumentationFile>
   <NoWarn>$(NoWarn);1591</NoWarn>
-</PropertyGroup>
+  <UserSecretsId>706fe281-2ff5-4125-a95d-8be295a175a5</UserSecretsId>
+  </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.*">
