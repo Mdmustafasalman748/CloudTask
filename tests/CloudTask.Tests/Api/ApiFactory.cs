@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -18,31 +19,47 @@ public class ApiFactory : WebApplicationFactory<Program>
 
     private readonly string _dbName = Guid.NewGuid().ToString("N");
 
-    private string SqlConnectionString() =>
-        new SqlConnectionStringBuilder(BaseConnection)
+    private string SqlConnectionString()
+    {
+        var builder = new SqlConnectionStringBuilder(BaseConnection)
         {
             InitialCatalog = $"CloudTaskTests_{_dbName}"
-        }.ConnectionString;
+        };
+        return builder.ConnectionString;
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // Program.cs requires a connection string to exist
-        builder.UseSetting("ConnectionStrings:DefaultConnection",
+        builder.UseSetting(
+            "ConnectionStrings:DefaultConnection",
             UsingSqlServer ? SqlConnectionString() : "Server=unused;Database=unused");
+
+        // Program.cs requires a signing key; user secrets don't exist in CI
+        builder.UseSetting("Jwt:Key", "test-only-signing-key-0123456789abcdefghij");
+        builder.UseSetting("Jwt:Issuer", "CloudTask");
+        builder.UseSetting("Jwt:Audience", "CloudTask.Clients");
+        builder.UseSetting("Jwt:ExpiryMinutes", "60");
 
         builder.ConfigureServices(services =>
         {
             var descriptor = services.SingleOrDefault(
                 d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
-            if (descriptor is not null) services.Remove(descriptor);
+            if (descriptor is not null)
+            {
+                services.Remove(descriptor);
+            }
 
             if (UsingSqlServer)
+            {
                 services.AddDbContext<AppDbContext>(o => o.UseSqlServer(SqlConnectionString()));
+            }
             else
+            {
                 services.AddDbContext<AppDbContext>(o => o
-    .UseInMemoryDatabase(_dbName)
-    .ConfigureWarnings(w => w.Ignore(
-        Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning)));
+                    .UseInMemoryDatabase(_dbName)
+                    .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+            }
         });
     }
 
