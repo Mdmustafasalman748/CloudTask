@@ -1,5 +1,3 @@
-using System;
-
 namespace CloudTask.Api.Common;
 
 public abstract class AppException : Exception
@@ -20,4 +18,9 @@ public class ConflictException : AppException
 public class BadRequestException : AppException
 {
     public BadRequestException(string message) : base(message) { }
+}
+
+public class UnauthorizedException : AppException
+{
+    public UnauthorizedException(string message) : base(message) { }
 }

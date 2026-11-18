@@ -1,7 +1,5 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
-using System.Threading;
-using System;
 
 namespace CloudTask.Api.Common;
 
@@ -25,11 +23,14 @@ public class GlobalExceptionHandler : IExceptionHandler
             NotFoundException => (StatusCodes.Status404NotFound, "Not Found"),
             ConflictException => (StatusCodes.Status409Conflict, "Conflict"),
             BadRequestException => (StatusCodes.Status400BadRequest, "Bad Request"),
+            UnauthorizedException => (StatusCodes.Status401Unauthorized, "Unauthorized"),
             _ => (StatusCodes.Status500InternalServerError, "Server Error")
         };
 
         if (status == StatusCodes.Status500InternalServerError)
+        {
             _logger.LogError(exception, "Unhandled exception for {Path}", context.Request.Path);
+        }
 
         var problem = new ProblemDetails
         {

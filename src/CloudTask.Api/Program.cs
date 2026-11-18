@@ -1,10 +1,12 @@
-using System;
+using System.Text;
 using System.Text.Json.Serialization;
 using CloudTask.Api.Common;
 using CloudTask.Api.Services;
 using CloudTask.Infrastructure;
 using CloudTask.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -39,7 +41,32 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ITaskService, TaskService>();
-// builder.Services.AddScoped<IAuthService, AuthService>();   // uncomment in Day 15 Task 3
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<ITokenService, TokenService>();
+
+// JWT authentication
+var jwtKey = builder.Configuration["Jwt:Key"]
+    ?? throw new InvalidOperationException("Jwt:Key is not configured.");
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;   // keep "sub" as "sub"
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidateAudience = true,
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromSeconds(30)
+        };
+    });
+
+builder.Services.AddAuthorization();
 
 // Health checks: "ready" includes the database
 builder.Services.AddHealthChecks()
@@ -70,6 +97,8 @@ app.UseHttpsRedirection();
 
 app.UseCors("Frontend");
 
+// Order matters: authentication (who are you?) before authorization (what may you do?)
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();

@@ -39,7 +39,10 @@ public class ApiFactory : WebApplicationFactory<Program>
             if (UsingSqlServer)
                 services.AddDbContext<AppDbContext>(o => o.UseSqlServer(SqlConnectionString()));
             else
-                services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
+                services.AddDbContext<AppDbContext>(o => o
+    .UseInMemoryDatabase(_dbName)
+    .ConfigureWarnings(w => w.Ignore(
+        Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning)));
         });
     }
 
