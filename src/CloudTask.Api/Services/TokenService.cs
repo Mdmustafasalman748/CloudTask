@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -8,27 +10,35 @@ namespace CloudTask.Api.Services;
 
 public interface ITokenService
 {
-    (string Token, DateTime ExpiresAt) Create(AppIdentityUser user);
+    (string Token, DateTime ExpiresAt) Create(AppIdentityUser user, IList<string> roles);
 }
 
 public class TokenService : ITokenService
 {
     private readonly IConfiguration _config;
 
-    public TokenService(IConfiguration config) => _config = config;
+    public TokenService(IConfiguration config)
+    {
+        _config = config;
+    }
 
-    public (string Token, DateTime ExpiresAt) Create(AppIdentityUser user)
+    public (string Token, DateTime ExpiresAt) Create(AppIdentityUser user, IList<string> roles)
     {
         var key = _config["Jwt:Key"]
             ?? throw new InvalidOperationException("Jwt:Key is not configured.");
         var expires = DateTime.UtcNow.AddMinutes(_config.GetValue("Jwt:ExpiryMinutes", 60));
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.UserId.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, user.Email!),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
+
+        foreach (var role in roles)
+        {
+            claims.Add(new Claim("role", role));
+        }
 
         var credentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)),

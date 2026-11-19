@@ -38,7 +38,6 @@ public class AuthService : IAuthService
             throw new ConflictException($"A user with email '{email}' already exists.");
         }
 
-        // One transaction so we never end up with a profile and no login (or the reverse)
         await using var tx = await _db.Database.BeginTransactionAsync();
 
         var profile = new User { Email = email, DisplayName = request.DisplayName.Trim() };
@@ -55,9 +54,16 @@ public class AuthService : IAuthService
         var result = await _userManager.CreateAsync(identity, request.Password);
         if (!result.Succeeded)
         {
-            // Disposing the transaction uncommitted rolls the profile back too
             throw new BadRequestException(
                 string.Join(" ", result.Errors.Select(e => e.Description)));
+        }
+
+        // Everyone registers as a Member; Admins are promoted deliberately, never here
+        var roleResult = await _userManager.AddToRoleAsync(identity, RoleNames.Member);
+        if (!roleResult.Succeeded)
+        {
+            throw new BadRequestException(
+                string.Join(" ", roleResult.Errors.Select(e => e.Description)));
         }
 
         await tx.CommitAsync();
@@ -70,7 +76,6 @@ public class AuthService : IAuthService
         var email = request.Email.Trim().ToLowerInvariant();
         var identity = await _userManager.FindByEmailAsync(email);
 
-        // Same message for every failure, so attackers can't tell which emails exist
         const string failureMessage = "Invalid email or password.";
 
         if (identity is null)
@@ -92,7 +97,8 @@ public class AuthService : IAuthService
         await _userManager.ResetAccessFailedCountAsync(identity);
 
         var profile = await _db.Users.AsNoTracking().SingleAsync(u => u.Id == identity.UserId);
-        var (token, expiresAt) = _tokens.Create(identity);
+        var roles = await _userManager.GetRolesAsync(identity);
+        var (token, expiresAt) = _tokens.Create(identity, roles);
 
         return new LoginResponse(
             token,

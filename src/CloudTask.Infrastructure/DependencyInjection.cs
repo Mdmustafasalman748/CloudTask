@@ -1,5 +1,6 @@
 using CloudTask.Infrastructure.Identity;
 using CloudTask.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -23,6 +24,7 @@ public static class DependencyInjection
             options.User.RequireUniqueEmail = true;
             options.Lockout.MaxFailedAccessAttempts = 5;
         })
+            .AddRoles<IdentityRole>()
             .AddEntityFrameworkStores<AppDbContext>();
 
         return services;
