@@ -1,12 +1,12 @@
 using CloudTask.Api.Common;
 using CloudTask.Api.Dtos;
 using CloudTask.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace CloudTask.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class UsersController : ControllerBase
@@ -21,22 +21,21 @@ public class UsersController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<List<UserResponse>>> GetAll() =>
-        Ok(await _users.GetAllAsync());
+    public async Task<ActionResult<List<UserResponse>>> GetAll()
+    {
+        return Ok(await _users.GetAllAsync());
+    }
 
     [HttpGet("{id:int}")]
-    public async Task<ActionResult<UserResponse>> GetById(int id) =>
-        Ok(await _users.GetByIdAsync(id));
+    public async Task<ActionResult<UserResponse>> GetById(int id)
+    {
+        return Ok(await _users.GetByIdAsync(id));
+    }
 
     [HttpGet("{id:int}/tasks")]
     public async Task<ActionResult<PagedResult<AssignedTaskResponse>>> GetAssignedTasks(
-        int id, [FromQuery] TaskQuery query) =>
-        Ok(await _tasks.GetAssignedAsync(id, query));
-
-    [HttpPost]
-    public async Task<ActionResult<UserResponse>> Create(CreateUserRequest request)
+        int id, [FromQuery] TaskQuery query)
     {
-        var created = await _users.CreateAsync(request);
-        return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
+        return Ok(await _tasks.GetAssignedAsync(id, query));
     }
 }

@@ -1,11 +1,12 @@
+
+using System;
+using System.Linq;
+using System.Threading.Tasks;
 using CloudTask.Api.Common;
 using CloudTask.Api.Dtos;
 using CloudTask.Domain.Entities;
 using CloudTask.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
-using System.Linq;
-using System.Threading.Tasks;
-using System;
 
 namespace CloudTask.Api.Services;
 
@@ -23,53 +24,79 @@ public interface ITaskService
 public class TaskService : ITaskService
 {
     private readonly AppDbContext _db;
+    private readonly ICurrentUser _currentUser;
 
-    public TaskService(AppDbContext db)
+    public TaskService(AppDbContext db, ICurrentUser currentUser)
     {
         _db = db;
+        _currentUser = currentUser;
     }
 
-    public async Task<PagedResult<TaskResponse>> GetAllAsync(int projectId, TaskQuery query)
+    public async Task<PagedResult<TaskResponse>> GetAllAsync(
+        int projectId,
+        TaskQuery query)
     {
-        if (!await _db.Projects.AnyAsync(p => p.Id == projectId))
-        {
-            throw new NotFoundException($"Project {projectId} was not found.");
-        }
+        await FindOwnedProjectAsync(projectId);
 
         var q = FilterAndSort(
-            _db.Tasks.AsNoTracking().Where(t => t.ProjectId == projectId), query);
+            _db.Tasks.AsNoTracking()
+                .Where(t => t.ProjectId == projectId),
+            query);
 
         var totalCount = await q.CountAsync();
+
         var tasks = await q
             .Skip((query.Page - 1) * query.PageSize)
             .Take(query.PageSize)
             .ToListAsync();
 
         return new PagedResult<TaskResponse>(
-            tasks.Select(TaskResponse.From).ToList(), query.Page, query.PageSize, totalCount);
+            tasks.Select(TaskResponse.From).ToList(),
+            query.Page,
+            query.PageSize,
+            totalCount);
     }
 
-    // Tasks assigned to one user across ALL projects, with the project name in ONE query
-    public async Task<PagedResult<AssignedTaskResponse>> GetAssignedAsync(int userId, TaskQuery query)
+    public async Task<PagedResult<AssignedTaskResponse>> GetAssignedAsync(
+        int userId,
+        TaskQuery query)
     {
         if (!await _db.Users.AnyAsync(u => u.Id == userId))
         {
             throw new NotFoundException($"User {userId} was not found.");
         }
 
+        if (userId != _currentUser.Id)
+        {
+            throw new ForbiddenException(
+                "You can only view tasks assigned to yourself.");
+        }
+
         var q = FilterAndSort(
-            _db.Tasks.AsNoTracking().Where(t => t.AssigneeId == userId), query);
+            _db.Tasks.AsNoTracking()
+                .Where(t => t.AssigneeId == userId),
+            query);
 
         var totalCount = await q.CountAsync();
+
         var items = await q
             .Skip((query.Page - 1) * query.PageSize)
             .Take(query.PageSize)
             .Select(t => new AssignedTaskResponse(
-                t.Id, t.Title, t.Status.ToString(), t.Priority.ToString(),
-                t.ProjectId, t.Project!.Name, t.CreatedAt))
+                t.Id,
+                t.Title,
+                t.Status.ToString(),
+                t.Priority.ToString(),
+                t.ProjectId,
+                t.Project!.Name,
+                t.CreatedAt))
             .ToListAsync();
 
-        return new PagedResult<AssignedTaskResponse>(items, query.Page, query.PageSize, totalCount);
+        return new PagedResult<AssignedTaskResponse>(
+            items,
+            query.Page,
+            query.PageSize,
+            totalCount);
     }
 
     public async Task<TaskResponse> GetByIdAsync(int projectId, int id)
@@ -78,16 +105,15 @@ public class TaskService : ITaskService
         return TaskResponse.From(task);
     }
 
-    public async Task<TaskResponse> CreateAsync(int projectId, CreateTaskRequest request)
+    public async Task<TaskResponse> CreateAsync(
+        int projectId,
+        CreateTaskRequest request)
     {
-        var project = await _db.Projects.FindAsync(projectId);
-        if (project is null)
-        {
-            throw new NotFoundException($"Project {projectId} was not found.");
-        }
+        var project = await FindOwnedProjectAsync(projectId);
 
         var task = project.AddTask(request.Title, request.Priority);
         task.Description = request.Description;
+
         await _db.SaveChangesAsync();
 
         return TaskResponse.From(task);
@@ -103,63 +129,100 @@ public class TaskService : ITaskService
         return ApplyAsync(projectId, id, task => task.Complete());
     }
 
-    public async Task<TaskResponse> AssignAsync(int projectId, int id, int userId)
+    public async Task<TaskResponse> AssignAsync(
+        int projectId,
+        int id,
+        int userId)
     {
         var user = await _db.Users.FindAsync(userId);
+
         if (user is null)
         {
-            throw new BadRequestException($"User {userId} does not exist.");
+            throw new BadRequestException(
+                $"User {userId} does not exist.");
         }
 
-        return await ApplyAsync(projectId, id, task => task.AssignTo(user));
+        return await ApplyAsync(
+            projectId,
+            id,
+            task => task.AssignTo(user));
     }
 
-    // Shared by both list endpoints: status filter + whitelisted sort (Id is the tiebreaker)
-    private static IQueryable<TaskItem> FilterAndSort(IQueryable<TaskItem> q, TaskQuery query)
+    private static IQueryable<TaskItem> FilterAndSort(
+        IQueryable<TaskItem> query,
+        TaskQuery filter)
     {
-        if (query.Status is { } status)
+        if (filter.Status is { } status)
         {
-            q = q.Where(t => t.Status == status);
+            query = query.Where(t => t.Status == status);
         }
 
-        var sortBy = query.SortBy.ToLowerInvariant();
+        var sortBy = filter.SortBy.ToLowerInvariant();
 
         if (sortBy == "id")
         {
-            return query.Descending ? q.OrderByDescending(t => t.Id) : q.OrderBy(t => t.Id);
+            return filter.Descending
+                ? query.OrderByDescending(t => t.Id)
+                : query.OrderBy(t => t.Id);
         }
 
         if (sortBy == "title")
         {
-            return query.Descending
-                ? q.OrderByDescending(t => t.Title).ThenBy(t => t.Id)
-                : q.OrderBy(t => t.Title).ThenBy(t => t.Id);
+            return filter.Descending
+                ? query.OrderByDescending(t => t.Title).ThenBy(t => t.Id)
+                : query.OrderBy(t => t.Title).ThenBy(t => t.Id);
         }
 
         if (sortBy == "createdat")
         {
-            return query.Descending
-                ? q.OrderByDescending(t => t.CreatedAt).ThenBy(t => t.Id)
-                : q.OrderBy(t => t.CreatedAt).ThenBy(t => t.Id);
+            return filter.Descending
+                ? query.OrderByDescending(t => t.CreatedAt).ThenBy(t => t.Id)
+                : query.OrderBy(t => t.CreatedAt).ThenBy(t => t.Id);
         }
 
         throw new BadRequestException(
-            $"Unknown sortBy '{query.SortBy}'. Use id, title, or createdAt.");
+            $"Unknown sortBy '{filter.SortBy}'. Use id, title, or createdAt.");
+    }
+
+    private async Task<Project> FindOwnedProjectAsync(int projectId)
+    {
+        var project = await _db.Projects.FindAsync(projectId);
+
+        if (project is null)
+        {
+            throw new NotFoundException(
+                $"Project {projectId} was not found.");
+        }
+
+        if (project.OwnerId != _currentUser.Id)
+        {
+            throw new ForbiddenException(
+                "Only the project owner can access its tasks.");
+        }
+
+        return project;
     }
 
     private async Task<TaskItem> FindAsync(int projectId, int id)
     {
-        var task = await _db.Tasks.FirstOrDefaultAsync(t => t.Id == id && t.ProjectId == projectId);
+        await FindOwnedProjectAsync(projectId);
+
+        var task = await _db.Tasks.FirstOrDefaultAsync(
+            t => t.Id == id && t.ProjectId == projectId);
+
         if (task is null)
         {
-            throw new NotFoundException($"Task {id} was not found in project {projectId}.");
+            throw new NotFoundException(
+                $"Task {id} was not found in project {projectId}.");
         }
 
         return task;
     }
 
-    // Load, run the domain operation, translate a rule violation into a conflict, save
-    private async Task<TaskResponse> ApplyAsync(int projectId, int id, Action<TaskItem> operation)
+    private async Task<TaskResponse> ApplyAsync(
+        int projectId,
+        int id,
+        Action<TaskItem> operation)
     {
         var task = await FindAsync(projectId, id);
 
@@ -173,6 +236,7 @@ public class TaskService : ITaskService
         }
 
         await _db.SaveChangesAsync();
+
         return TaskResponse.From(task);
     }
 }

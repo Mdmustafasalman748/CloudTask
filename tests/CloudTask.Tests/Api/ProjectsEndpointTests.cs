@@ -4,23 +4,30 @@ using CloudTask.Api.Dtos;
 
 namespace CloudTask.Tests.Api;
 
-public class ProjectsEndpointTests : IClassFixture<ApiFactory>
+public class ProjectsEndpointTests : IClassFixture<ApiFactory>, IAsyncLifetime
 {
     private readonly ApiFactory _factory;
-    private readonly HttpClient _client;
+    private HttpClient _client = null!;
 
     public ProjectsEndpointTests(ApiFactory factory)
     {
         _factory = factory;
-        _client = factory.CreateClient();
+    }
+
+    public async Task InitializeAsync()
+    {
+        _client = await _factory.CreateAuthenticatedClientAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        return Task.CompletedTask;
     }
 
     private async Task<ProjectResponse> CreateProjectAsync(string name = "Demo")
     {
-        var ownerId = await _factory.SeedUserAsync();
-        var response = await _client.PostAsJsonAsync("/api/projects",
-            new { name, description = "Test", ownerId });
-
+        var response = await _client.PostAsJsonAsync(
+            "/api/projects", new { name, description = "Test" });
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ProjectResponse>())!;
     }
@@ -28,35 +35,20 @@ public class ProjectsEndpointTests : IClassFixture<ApiFactory>
     [Fact]
     public async Task Create_ValidRequest_Returns201WithLocation()
     {
-        var ownerId = await _factory.SeedUserAsync();
-
-        var response = await _client.PostAsJsonAsync("/api/projects",
-            new { name = "Demo", description = "First", ownerId });
+        var response = await _client.PostAsJsonAsync(
+            "/api/projects", new { name = "Demo", description = "First" });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.NotNull(response.Headers.Location);
 
         var body = await response.Content.ReadFromJsonAsync<ProjectResponse>();
         Assert.Equal("Demo", body!.Name);
-        Assert.Equal(ownerId, body.OwnerId);
     }
 
     [Fact]
     public async Task Create_EmptyName_Returns400()
     {
-        var ownerId = await _factory.SeedUserAsync();
-
-        var response = await _client.PostAsJsonAsync("/api/projects",
-            new { name = "", ownerId });
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Create_UnknownOwner_Returns400()
-    {
-        var response = await _client.PostAsJsonAsync("/api/projects",
-            new { name = "Demo", ownerId = 999999 });
+        var response = await _client.PostAsJsonAsync("/api/projects", new { name = "" });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -74,8 +66,8 @@ public class ProjectsEndpointTests : IClassFixture<ApiFactory>
     {
         var created = await CreateProjectAsync("Old name");
 
-        var put = await _client.PutAsJsonAsync($"/api/projects/{created.Id}",
-            new { name = "New name", description = "Updated" });
+        var put = await _client.PutAsJsonAsync(
+            $"/api/projects/{created.Id}", new { name = "New name", description = "Updated" });
         Assert.Equal(HttpStatusCode.NoContent, put.StatusCode);
 
         var fetched = await _client.GetFromJsonAsync<ProjectResponse>($"/api/projects/{created.Id}");

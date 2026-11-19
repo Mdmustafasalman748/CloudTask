@@ -1,26 +1,33 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Threading.Tasks;
 using CloudTask.Api.Common;
 using CloudTask.Api.Dtos;
 
 namespace CloudTask.Tests.Api;
 
-public class TasksPagingTests : IClassFixture<ApiFactory>
+public class TasksPagingTests : IClassFixture<ApiFactory>, IAsyncLifetime
 {
     private readonly ApiFactory _factory;
-    private readonly HttpClient _client;
+    private HttpClient _client = null!;
 
     public TasksPagingTests(ApiFactory factory)
     {
         _factory = factory;
-        _client = factory.CreateClient();
+    }
+
+    public async Task InitializeAsync()
+    {
+        _client = await _factory.CreateAuthenticatedClientAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        return Task.CompletedTask;
     }
 
     private async Task<int> CreateProjectAsync(string name = "P")
     {
-        var ownerId = await _factory.SeedUserAsync();
-        var response = await _client.PostAsJsonAsync("/api/projects", new { name, ownerId });
+        var response = await _client.PostAsJsonAsync("/api/projects", new { name });
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ProjectResponse>())!.Id;
     }
@@ -37,7 +44,10 @@ public class TasksPagingTests : IClassFixture<ApiFactory>
     public async Task ProjectTasks_PagingReturnsSliceAndTotals()
     {
         var projectId = await CreateProjectAsync();
-        for (var i = 1; i <= 5; i++) await CreateTaskAsync(projectId, $"task-{i:D2}");
+        for (var i = 1; i <= 5; i++)
+        {
+            await CreateTaskAsync(projectId, $"task-{i:D2}");
+        }
 
         var page2 = await _client.GetFromJsonAsync<PagedResult<TaskResponse>>(
             $"/api/projects/{projectId}/tasks?page=2&pageSize=2&sortBy=title");
@@ -70,18 +80,24 @@ public class TasksPagingTests : IClassFixture<ApiFactory>
     [Fact]
     public async Task AssignedTasks_SpanProjects_AndIncludeProjectName()
     {
-        var userId = await _factory.SeedUserAsync();
+        // The logged-in user is the assignee, because users may only view their own assigned tasks
+        var me = await _client.GetFromJsonAsync<UserResponse>("/api/auth/me");
+        var userId = me!.Id;
+
         var projectA = await CreateProjectAsync("Alpha");
         var projectB = await CreateProjectAsync("Beta");
 
-        foreach (var (projectId, title) in new[] { (projectA, "a-task"), (projectB, "b-task") })
-        {
-            var task = await CreateTaskAsync(projectId, title);
-            var assign = await _client.PostAsJsonAsync(
-                $"/api/projects/{projectId}/tasks/{task.Id}/assign", new { userId });
-            assign.EnsureSuccessStatusCode();
-        }
+        var taskA = await CreateTaskAsync(projectA, "a-task");
+        var taskB = await CreateTaskAsync(projectB, "b-task");
         await CreateTaskAsync(projectA, "unassigned");
+
+        var assignA = await _client.PostAsJsonAsync(
+            $"/api/projects/{projectA}/tasks/{taskA.Id}/assign", new { userId });
+        assignA.EnsureSuccessStatusCode();
+
+        var assignB = await _client.PostAsJsonAsync(
+            $"/api/projects/{projectB}/tasks/{taskB.Id}/assign", new { userId });
+        assignB.EnsureSuccessStatusCode();
 
         var result = await _client.GetFromJsonAsync<PagedResult<AssignedTaskResponse>>(
             $"/api/users/{userId}/tasks");

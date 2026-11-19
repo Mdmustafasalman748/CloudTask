@@ -4,17 +4,43 @@ using System.Net.Http.Json;
 using System.Threading.Tasks;
 using CloudTask.Api.Common;
 using CloudTask.Api.Services;
+using CloudTask.Domain.Entities;
 using CloudTask.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace CloudTask.Tests.Api;
 
-public class ErrorHandlingTests : IClassFixture<ApiFactory>
+public class ErrorHandlingTests : IClassFixture<ApiFactory>, IAsyncLifetime
 {
-    private readonly HttpClient _client;
+    private readonly ApiFactory _factory;
+    private HttpClient _client = null!;
 
-    public ErrorHandlingTests(ApiFactory factory) => _client = factory.CreateClient();
+    public ErrorHandlingTests(ApiFactory factory)
+    {
+        _factory = factory;
+    }
+
+    public async Task InitializeAsync()
+    {
+        _client = await _factory.CreateAuthenticatedClientAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    private sealed class FakeUser : ICurrentUser
+    {
+        public FakeUser(int id)
+        {
+            Id = id;
+        }
+
+        public int Id { get; }
+    }
 
     [Fact]
     public async Task NotFound_ReturnsProblemDetails()
@@ -33,10 +59,12 @@ public class ErrorHandlingTests : IClassFixture<ApiFactory>
     [Fact]
     public async Task Conflict_ReturnsProblemDetailsWithDomainMessage()
     {
+        var anonymous = _factory.CreateClient();
         var email = $"{Guid.NewGuid()}@example.com";
-        await _client.PostAsJsonAsync("/api/users", new { email, displayName = "A" });
+        var body = new { email, displayName = "A", password = "Str0ngPassword" };
 
-        var response = await _client.PostAsJsonAsync("/api/users", new { email, displayName = "B" });
+        await anonymous.PostAsJsonAsync("/api/auth/register", body);
+        var response = await anonymous.PostAsJsonAsync("/api/auth/register", body);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
@@ -48,21 +76,23 @@ public class ErrorHandlingTests : IClassFixture<ApiFactory>
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
 
         await using var db = new AppDbContext(options);
-        var user = new CloudTask.Domain.Entities.User { Email = "a@b.com", DisplayName = "A" };
+        var user = new User { Email = "a@b.com", DisplayName = "A" };
         db.Users.Add(user);
         await db.SaveChangesAsync();
 
-        var project = new CloudTask.Domain.Entities.Project { Name = "P", OwnerId = user.Id };
+        var project = new Project { Name = "P", OwnerId = user.Id };
         var task = project.AddTask("T");
         db.Projects.Add(project);
         await db.SaveChangesAsync();
 
-        var service = new TaskService(db);
+        var service = new TaskService(db, new FakeUser(user.Id));
         await service.CompleteAsync(project.Id, task.Id);
 
-        await Assert.ThrowsAsync<ConflictException>(() => service.CompleteAsync(project.Id, task.Id));
+        await Assert.ThrowsAsync<ConflictException>(
+            () => service.CompleteAsync(project.Id, task.Id));
     }
 }

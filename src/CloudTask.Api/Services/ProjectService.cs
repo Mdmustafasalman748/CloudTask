@@ -3,8 +3,6 @@ using CloudTask.Api.Dtos;
 using CloudTask.Domain.Entities;
 using CloudTask.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace CloudTask.Api.Services;
 
@@ -20,8 +18,13 @@ public interface IProjectService
 public class ProjectService : IProjectService
 {
     private readonly AppDbContext _db;
+    private readonly ICurrentUser _currentUser;
 
-    public ProjectService(AppDbContext db) => _db = db;
+    public ProjectService(AppDbContext db, ICurrentUser currentUser)
+    {
+        _db = db;
+        _currentUser = currentUser;
+    }
 
     public async Task<PagedResult<ProjectResponse>> GetAllAsync(ProjectQuery query)
     {
@@ -33,18 +36,29 @@ public class ProjectService : IProjectService
             q = q.Where(p => p.Name.Contains(search));
         }
 
-        // Whitelisted sorting; Id is the tiebreaker so paging stays stable
-        q = (query.SortBy.ToLowerInvariant(), query.Descending) switch
+        var sortBy = query.SortBy.ToLowerInvariant();
+
+        if (sortBy == "id")
         {
-            ("id", false) => q.OrderBy(p => p.Id),
-            ("id", true) => q.OrderByDescending(p => p.Id),
-            ("name", false) => q.OrderBy(p => p.Name).ThenBy(p => p.Id),
-            ("name", true) => q.OrderByDescending(p => p.Name).ThenBy(p => p.Id),
-            ("createdat", false) => q.OrderBy(p => p.CreatedAt).ThenBy(p => p.Id),
-            ("createdat", true) => q.OrderByDescending(p => p.CreatedAt).ThenBy(p => p.Id),
-            _ => throw new BadRequestException(
-                $"Unknown sortBy '{query.SortBy}'. Use id, name, or createdAt.")
-        };
+            q = query.Descending ? q.OrderByDescending(p => p.Id) : q.OrderBy(p => p.Id);
+        }
+        else if (sortBy == "name")
+        {
+            q = query.Descending
+                ? q.OrderByDescending(p => p.Name).ThenBy(p => p.Id)
+                : q.OrderBy(p => p.Name).ThenBy(p => p.Id);
+        }
+        else if (sortBy == "createdat")
+        {
+            q = query.Descending
+                ? q.OrderByDescending(p => p.CreatedAt).ThenBy(p => p.Id)
+                : q.OrderBy(p => p.CreatedAt).ThenBy(p => p.Id);
+        }
+        else
+        {
+            throw new BadRequestException(
+                $"Unknown sortBy '{query.SortBy}'. Use id, name, or createdAt.");
+        }
 
         var totalCount = await q.CountAsync();
 
@@ -58,24 +72,29 @@ public class ProjectService : IProjectService
         return new PagedResult<ProjectResponse>(items, query.Page, query.PageSize, totalCount);
     }
 
-    public async Task<ProjectResponse> GetByIdAsync(int id) =>
-        await _db.Projects.AsNoTracking()
+    public async Task<ProjectResponse> GetByIdAsync(int id)
+    {
+        var project = await _db.Projects.AsNoTracking()
             .Where(p => p.Id == id)
             .Select(p => new ProjectResponse(
                 p.Id, p.Name, p.Description, p.CreatedAt, p.OwnerId, p.Tasks.Count))
-            .FirstOrDefaultAsync()
-        ?? throw new NotFoundException($"Project {id} was not found.");
+            .FirstOrDefaultAsync();
+
+        if (project is null)
+        {
+            throw new NotFoundException($"Project {id} was not found.");
+        }
+
+        return project;
+    }
 
     public async Task<ProjectResponse> CreateAsync(CreateProjectRequest request)
     {
-        if (!await _db.Users.AnyAsync(u => u.Id == request.OwnerId))
-            throw new BadRequestException($"User {request.OwnerId} does not exist.");
-
         var project = new Project
         {
             Name = request.Name.Trim(),
             Description = request.Description,
-            OwnerId = request.OwnerId
+            OwnerId = _currentUser.Id
         };
 
         _db.Projects.Add(project);
@@ -88,8 +107,7 @@ public class ProjectService : IProjectService
 
     public async Task UpdateAsync(int id, UpdateProjectRequest request)
     {
-        var project = await _db.Projects.FindAsync(id)
-            ?? throw new NotFoundException($"Project {id} was not found.");
+        var project = await FindOwnedAsync(id);
 
         project.Name = request.Name.Trim();
         project.Description = request.Description;
@@ -98,11 +116,25 @@ public class ProjectService : IProjectService
 
     public async Task DeleteAsync(int id)
     {
-        var project = await _db.Projects.FindAsync(id);
-        if (project is null)
-            throw new NotFoundException($"Project {id} was not found.");
+        var project = await FindOwnedAsync(id);
 
         _db.Projects.Remove(project);
         await _db.SaveChangesAsync();
+    }
+
+    private async Task<Project> FindOwnedAsync(int id)
+    {
+        var project = await _db.Projects.FindAsync(id);
+        if (project is null)
+        {
+            throw new NotFoundException($"Project {id} was not found.");
+        }
+
+        if (project.OwnerId != _currentUser.Id)
+        {
+            throw new ForbiddenException("Only the project owner can do this.");
+        }
+
+        return project;
     }
 }

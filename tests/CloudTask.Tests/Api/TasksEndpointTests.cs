@@ -1,34 +1,41 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Threading.Tasks;
 using CloudTask.Api.Common;
 using CloudTask.Api.Dtos;
 
 namespace CloudTask.Tests.Api;
 
-public class TasksEndpointTests : IClassFixture<ApiFactory>
+public class TasksEndpointTests : IClassFixture<ApiFactory>, IAsyncLifetime
 {
     private readonly ApiFactory _factory;
-    private readonly HttpClient _client;
+    private HttpClient _client = null!;
 
     public TasksEndpointTests(ApiFactory factory)
     {
         _factory = factory;
-        _client = factory.CreateClient();
+    }
+
+    public async Task InitializeAsync()
+    {
+        _client = await _factory.CreateAuthenticatedClientAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        return Task.CompletedTask;
     }
 
     private async Task<int> CreateProjectAsync()
     {
-        var ownerId = await _factory.SeedUserAsync();
-        var response = await _client.PostAsJsonAsync("/api/projects", new { name = "P", ownerId });
+        var response = await _client.PostAsJsonAsync("/api/projects", new { name = "P" });
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ProjectResponse>())!.Id;
     }
 
     private async Task<TaskResponse> CreateTaskAsync(int projectId, string title = "Write docs")
     {
-        var response = await _client.PostAsJsonAsync($"/api/projects/{projectId}/tasks",
-            new { title, priority = "High" });
+        var response = await _client.PostAsJsonAsync(
+            $"/api/projects/{projectId}/tasks", new { title, priority = "High" });
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<TaskResponse>())!;
     }
@@ -38,8 +45,8 @@ public class TasksEndpointTests : IClassFixture<ApiFactory>
     {
         var projectId = await CreateProjectAsync();
 
-        var response = await _client.PostAsJsonAsync($"/api/projects/{projectId}/tasks",
-            new { title = "Write docs", priority = "High" });
+        var response = await _client.PostAsJsonAsync(
+            $"/api/projects/{projectId}/tasks", new { title = "Write docs", priority = "High" });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<TaskResponse>();
@@ -51,8 +58,8 @@ public class TasksEndpointTests : IClassFixture<ApiFactory>
     [Fact]
     public async Task Create_UnknownProject_Returns404()
     {
-        var response = await _client.PostAsJsonAsync("/api/projects/999999/tasks",
-            new { title = "Orphan" });
+        var response = await _client.PostAsJsonAsync(
+            "/api/projects/999999/tasks", new { title = "Orphan" });
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -62,8 +69,8 @@ public class TasksEndpointTests : IClassFixture<ApiFactory>
     {
         var projectId = await CreateProjectAsync();
 
-        var response = await _client.PostAsJsonAsync($"/api/projects/{projectId}/tasks",
-            new { title = "" });
+        var response = await _client.PostAsJsonAsync(
+            $"/api/projects/{projectId}/tasks", new { title = "" });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -74,11 +81,13 @@ public class TasksEndpointTests : IClassFixture<ApiFactory>
         var projectId = await CreateProjectAsync();
         var task = await CreateTaskAsync(projectId);
 
-        var start = await _client.PostAsync($"/api/projects/{projectId}/tasks/{task.Id}/start", null);
+        var start = await _client.PostAsync(
+            $"/api/projects/{projectId}/tasks/{task.Id}/start", null);
         Assert.Equal(HttpStatusCode.OK, start.StatusCode);
         Assert.Equal("InProgress", (await start.Content.ReadFromJsonAsync<TaskResponse>())!.Status);
 
-        var complete = await _client.PostAsync($"/api/projects/{projectId}/tasks/{task.Id}/complete", null);
+        var complete = await _client.PostAsync(
+            $"/api/projects/{projectId}/tasks/{task.Id}/complete", null);
         var done = await complete.Content.ReadFromJsonAsync<TaskResponse>();
         Assert.Equal("Done", done!.Status);
         Assert.NotNull(done.CompletedAt);
@@ -91,7 +100,8 @@ public class TasksEndpointTests : IClassFixture<ApiFactory>
         var task = await CreateTaskAsync(projectId);
         await _client.PostAsync($"/api/projects/{projectId}/tasks/{task.Id}/complete", null);
 
-        var second = await _client.PostAsync($"/api/projects/{projectId}/tasks/{task.Id}/complete", null);
+        var second = await _client.PostAsync(
+            $"/api/projects/{projectId}/tasks/{task.Id}/complete", null);
 
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
     }
@@ -140,7 +150,8 @@ public class TasksEndpointTests : IClassFixture<ApiFactory>
         var task = await CreateTaskAsync(projectA);
 
         var get = await _client.GetAsync($"/api/projects/{projectB}/tasks/{task.Id}");
-        var start = await _client.PostAsync($"/api/projects/{projectB}/tasks/{task.Id}/start", null);
+        var start = await _client.PostAsync(
+            $"/api/projects/{projectB}/tasks/{task.Id}/start", null);
 
         Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, start.StatusCode);

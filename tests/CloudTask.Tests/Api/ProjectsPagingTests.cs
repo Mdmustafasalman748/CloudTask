@@ -1,46 +1,59 @@
+using System;
 using System.Net;
 using System.Net.Http.Json;
+using System.Threading.Tasks;
 using CloudTask.Api.Common;
 using CloudTask.Api.Dtos;
 
 namespace CloudTask.Tests.Api;
 
-public class ProjectsPagingTests : IClassFixture<ApiFactory>
+public class ProjectsPagingTests : IClassFixture<ApiFactory>, IAsyncLifetime
 {
     private readonly ApiFactory _factory;
-    private readonly HttpClient _client;
+    private HttpClient _client = null!;
 
     public ProjectsPagingTests(ApiFactory factory)
     {
         _factory = factory;
-        _client = factory.CreateClient();
     }
 
-    // Creates 5 projects sharing a unique token, so each test only sees its own data
+    public async Task InitializeAsync()
+    {
+        _client = await _factory.CreateAuthenticatedClientAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    // Creates 5 projects sharing a unique lowercase token, so each test sees only its own data
     private async Task<string> SeedFiveAsync()
     {
         var token = Guid.NewGuid().ToString("N");
-        var ownerId = await _factory.SeedUserAsync();
 
         for (var i = 1; i <= 5; i++)
         {
-            var response = await _client.PostAsJsonAsync("/api/projects",
-                new { name = $"{token}-{i:D2}", ownerId });
+            var response = await _client.PostAsJsonAsync(
+                "/api/projects", new { name = $"{token}-{i:D2}" });
             response.EnsureSuccessStatusCode();
         }
 
         return token;
     }
 
-    private Task<PagedResult<ProjectResponse>?> GetPageAsync(string url) =>
-        _client.GetFromJsonAsync<PagedResult<ProjectResponse>>(url);
+    private Task<PagedResult<ProjectResponse>?> GetPageAsync(string url)
+    {
+        return _client.GetFromJsonAsync<PagedResult<ProjectResponse>>(url);
+    }
 
     [Fact]
     public async Task Paging_ReturnsRequestedSliceAndTotals()
     {
         var token = await SeedFiveAsync();
 
-        var page2 = await GetPageAsync($"/api/projects?search={token}&page=2&pageSize=2&sortBy=name");
+        var page2 = await GetPageAsync(
+            $"/api/projects?search={token}&page=2&pageSize=2&sortBy=name");
 
         Assert.Equal(2, page2!.Items.Count);
         Assert.Equal(5, page2.TotalCount);
@@ -63,7 +76,8 @@ public class ProjectsPagingTests : IClassFixture<ApiFactory>
     {
         var token = await SeedFiveAsync();
 
-        var result = await GetPageAsync($"/api/projects?search={token}&sortBy=name&descending=true");
+        var result = await GetPageAsync(
+            $"/api/projects?search={token}&sortBy=name&descending=true");
 
         var names = result!.Items.Select(p => p.Name).ToList();
         Assert.Equal(names.OrderByDescending(n => n, StringComparer.Ordinal), names);

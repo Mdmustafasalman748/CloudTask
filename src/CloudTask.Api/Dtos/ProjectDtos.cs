@@ -17,9 +17,6 @@ public class CreateProjectRequest
 
     [StringLength(2000)]
     public string? Description { get; set; }
-
-    [Range(1, int.MaxValue)]
-    public int OwnerId { get; set; }
 }
 
 public class UpdateProjectRequest

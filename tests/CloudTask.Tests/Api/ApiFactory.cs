@@ -1,3 +1,7 @@
+
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using CloudTask.Api.Dtos;
 using CloudTask.Domain.Entities;
 using CloudTask.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
@@ -15,27 +19,42 @@ public class ApiFactory : WebApplicationFactory<Program>
     private static readonly string? BaseConnection =
         Environment.GetEnvironmentVariable("TEST_SQL_CONNECTION");
 
-    public static bool UsingSqlServer => !string.IsNullOrWhiteSpace(BaseConnection);
+    public static bool UsingSqlServer =>
+        !string.IsNullOrWhiteSpace(BaseConnection);
 
     private readonly string _dbName = Guid.NewGuid().ToString("N");
 
     private string SqlConnectionString()
     {
-        var builder = new SqlConnectionStringBuilder(BaseConnection)
+        var csb = new SqlConnectionStringBuilder(BaseConnection)
         {
-            InitialCatalog = $"CloudTaskTests_{_dbName}"
+            InitialCatalog = "CloudTaskTests_" + _dbName
         };
-        return builder.ConnectionString;
+
+        return csb.ConnectionString;
+    }
+
+    private void ConfigureDb(DbContextOptionsBuilder options)
+    {
+        if (UsingSqlServer)
+        {
+            options.UseSqlServer(SqlConnectionString());
+        }
+        else
+        {
+            options.UseInMemoryDatabase(_dbName);
+            options.ConfigureWarnings(w =>
+                w.Ignore(InMemoryEventId.TransactionIgnoredWarning));
+        }
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        // Program.cs requires a connection string to exist
-        builder.UseSetting(
-            "ConnectionStrings:DefaultConnection",
-            UsingSqlServer ? SqlConnectionString() : "Server=unused;Database=unused");
+        var connection = UsingSqlServer
+            ? SqlConnectionString()
+            : "Server=(localdb)\\MSSQLLocalDB;Database=unused;Trusted_Connection=True;";
 
-        // Program.cs requires a signing key; user secrets don't exist in CI
+        builder.UseSetting("ConnectionStrings:DefaultConnection", connection);
         builder.UseSetting("Jwt:Key", "test-only-signing-key-0123456789abcdefghij");
         builder.UseSetting("Jwt:Issuer", "CloudTask");
         builder.UseSetting("Jwt:Audience", "CloudTask.Clients");
@@ -45,25 +64,16 @@ public class ApiFactory : WebApplicationFactory<Program>
         {
             var descriptor = services.SingleOrDefault(
                 d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
+
             if (descriptor is not null)
             {
                 services.Remove(descriptor);
             }
 
-            if (UsingSqlServer)
-            {
-                services.AddDbContext<AppDbContext>(o => o.UseSqlServer(SqlConnectionString()));
-            }
-            else
-            {
-                services.AddDbContext<AppDbContext>(o => o
-                    .UseInMemoryDatabase(_dbName)
-                    .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
-            }
+            services.AddDbContext<AppDbContext>(ConfigureDb);
         });
     }
 
-    // Runs once the host is built: create the schema from your real migrations
     protected override IHost CreateHost(IHostBuilder builder)
     {
         var host = base.CreateHost(builder);
@@ -71,7 +81,8 @@ public class ApiFactory : WebApplicationFactory<Program>
         if (UsingSqlServer)
         {
             using var scope = host.Services.CreateScope();
-            scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Database.Migrate();
         }
 
         return host;
@@ -84,11 +95,12 @@ public class ApiFactory : WebApplicationFactory<Program>
             try
             {
                 using var scope = Services.CreateScope();
-                scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.EnsureDeleted();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                db.Database.EnsureDeleted();
             }
             catch
             {
-                // Cleanup is best-effort; a leftover test database is harmless
+                // Best-effort cleanup of the isolated test database.
             }
         }
 
@@ -105,8 +117,69 @@ public class ApiFactory : WebApplicationFactory<Program>
             Email = $"{Guid.NewGuid()}@example.com",
             DisplayName = "Test User"
         };
+
         db.Users.Add(user);
         await db.SaveChangesAsync();
+
         return user.Id;
+    }
+
+    public async Task<HttpClient> CreateAuthenticatedClientAsync()
+    {
+        var client = CreateClient();
+        var email = $"{Guid.NewGuid()}@example.com";
+
+        // Identity's default password policy requires a non-alphanumeric character.
+        const string password = "Str0ng!Password";
+
+        var register = await client.PostAsJsonAsync(
+            "/api/auth/register",
+            new
+            {
+                email,
+                displayName = "Tester",
+                password
+            });
+
+        if (!register.IsSuccessStatusCode)
+        {
+            var error = await register.Content.ReadAsStringAsync();
+
+            client.Dispose();
+
+            throw new InvalidOperationException(
+                $"Test registration failed with {(int)register.StatusCode} " +
+                $"{register.StatusCode}. Response: {error}");
+        }
+
+        var login = await client.PostAsJsonAsync(
+            "/api/auth/login",
+            new { email, password });
+
+        if (!login.IsSuccessStatusCode)
+        {
+            var error = await login.Content.ReadAsStringAsync();
+
+            client.Dispose();
+
+            throw new InvalidOperationException(
+                $"Test login failed with {(int)login.StatusCode} " +
+                $"{login.StatusCode}. Response: {error}");
+        }
+
+        var body = await login.Content.ReadFromJsonAsync<LoginResponse>();
+
+        if (body is null || string.IsNullOrWhiteSpace(body.Token))
+        {
+            client.Dispose();
+
+            throw new InvalidOperationException(
+                "Login succeeded, but the response did not contain a JWT token.");
+        }
+
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", body.Token);
+
+        return client;
     }
 }

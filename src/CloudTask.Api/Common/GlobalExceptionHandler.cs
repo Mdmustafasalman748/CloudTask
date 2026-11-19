@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using System.Threading;
+using System;
 
 namespace CloudTask.Api.Common;
 
@@ -24,6 +26,7 @@ public class GlobalExceptionHandler : IExceptionHandler
             ConflictException => (StatusCodes.Status409Conflict, "Conflict"),
             BadRequestException => (StatusCodes.Status400BadRequest, "Bad Request"),
             UnauthorizedException => (StatusCodes.Status401Unauthorized, "Unauthorized"),
+            ForbiddenException => (StatusCodes.Status403Forbidden, "Forbidden"),
             _ => (StatusCodes.Status500InternalServerError, "Server Error")
         };
 
@@ -36,7 +39,6 @@ public class GlobalExceptionHandler : IExceptionHandler
         {
             Status = status,
             Title = title,
-            // Only our own exceptions have messages that are safe to show to clients
             Detail = exception is AppException
                 ? exception.Message
                 : "An unexpected error occurred.",

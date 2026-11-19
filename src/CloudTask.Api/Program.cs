@@ -37,6 +37,10 @@ builder.Services.AddInfrastructure(connectionString);
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
+// Current user (reads the "sub" claim from the validated token)
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+
 // Application services
 builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<IUserService, UserService>();
