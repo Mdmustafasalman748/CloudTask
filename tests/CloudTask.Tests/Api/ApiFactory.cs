@@ -1,4 +1,7 @@
+
 using System;
+using System.Linq;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
@@ -45,13 +48,15 @@ public class ApiFactory : WebApplicationFactory<Program>
         else
         {
             options.UseInMemoryDatabase(_dbName);
-            options.ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning));
+            options.ConfigureWarnings(w =>
+                w.Ignore(InMemoryEventId.TransactionIgnoredWarning));
         }
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         string connection = "Server=unused;Database=unused";
+
         if (UsingSqlServer)
         {
             connection = SqlConnectionString();
@@ -60,6 +65,7 @@ public class ApiFactory : WebApplicationFactory<Program>
             var migrateOptions = new DbContextOptionsBuilder<AppDbContext>()
                 .UseSqlServer(connection)
                 .Options;
+
             using (var db = new AppDbContext(migrateOptions))
             {
                 db.Database.Migrate();
@@ -72,16 +78,21 @@ public class ApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("Jwt:Audience", "CloudTask.Clients");
         builder.UseSetting("Jwt:ExpiryMinutes", "60");
 
+        // Increase login rate limit for integration tests
+        builder.UseSetting("RateLimiting:LoginPerMinute", "100000");
+
         builder.ConfigureServices(services =>
         {
             var descriptor = services.SingleOrDefault(
                 d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
+
             if (descriptor != null)
             {
                 services.Remove(descriptor);
             }
 
-            services.AddDbContext<AppDbContext>(options => ConfigureDb(options));
+            services.AddDbContext<AppDbContext>(
+                options => ConfigureDb(options));
         });
     }
 
@@ -110,12 +121,15 @@ public class ApiFactory : WebApplicationFactory<Program>
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var user = new User();
-        user.Email = Guid.NewGuid() + "@example.com";
-        user.DisplayName = "Test User";
+        var user = new User
+        {
+            Email = Guid.NewGuid() + "@example.com",
+            DisplayName = "Test User"
+        };
 
         db.Users.Add(user);
         await db.SaveChangesAsync();
+
         return user.Id;
     }
 
@@ -129,9 +143,11 @@ public class ApiFactory : WebApplicationFactory<Program>
         var register = await client.PostAsJsonAsync(
             "/api/auth/register",
             new { email, displayName = "Tester", password });
+
         register.EnsureSuccessStatusCode();
 
         await LoginAsync(client, email, password);
+
         return client;
     }
 
@@ -145,25 +161,35 @@ public class ApiFactory : WebApplicationFactory<Program>
         var register = await client.PostAsJsonAsync(
             "/api/auth/register",
             new { email, displayName = "Admin", password });
+
         register.EnsureSuccessStatusCode();
 
         using (var scope = Services.CreateScope())
         {
             var users = scope.ServiceProvider.GetRequiredService<UserManager<AppIdentityUser>>();
             var identity = await users.FindByEmailAsync(email);
+
             await users.AddToRoleAsync(identity!, "Admin");
         }
 
         await LoginAsync(client, email, password);
+
         return client;
     }
 
-    private static async Task LoginAsync(HttpClient client, string email, string password)
+    private static async Task LoginAsync(
+        HttpClient client,
+        string email,
+        string password)
     {
-        var login = await client.PostAsJsonAsync("/api/auth/login", new { email, password });
+        var login = await client.PostAsJsonAsync(
+            "/api/auth/login",
+            new { email, password });
+
         login.EnsureSuccessStatusCode();
 
         var body = await login.Content.ReadFromJsonAsync<LoginResponse>();
+
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", body!.Token);
     }

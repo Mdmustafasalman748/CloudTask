@@ -123,5 +123,5 @@ public class TasksPagingTests : IClassFixture<ApiFactory>, IAsyncLifetime
         var response = await _client.GetAsync($"/api/projects/{projectId}/tasks?pageSize=1000");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
+    }   
 }
