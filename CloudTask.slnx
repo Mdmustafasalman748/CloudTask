@@ -3,6 +3,7 @@
     <Project Path="src/CloudTask.Api/CloudTask.Api.csproj" />
     <Project Path="src/CloudTask.Domain/CloudTask.Domain.csproj" />
     <Project Path="src/CloudTask.Infrastructure/CloudTask.Infrastructure.csproj" />
+    <Project Path="src/CloudTask.Web/CloudTask.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CloudTask.Tests/CloudTask.Tests.csproj" />

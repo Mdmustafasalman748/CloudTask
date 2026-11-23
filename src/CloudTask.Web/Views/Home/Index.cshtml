@@ -1,0 +1,30 @@
+﻿@model CloudTask.Web.Models.PagedDto<CloudTask.Web.Models.ProjectDto>
+    @{
+    ViewData["Title"] = "Projects";
+    }
+
+    <h1 class="h3 mb-3">Welcome, @User.Identity?.Name</h1>
+    <p class="text-muted">@Model.TotalCount project(s)</p>
+
+    @if (!Model.Items.Any())
+{
+    <p>No projects yet.</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr><th>Name</th><th>Description</th><th>Tasks</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var p in Model.Items)
+        {
+            <tr>
+                <td>@p.Name</td>
+                <td>@p.Description</td>
+                <td>@p.TaskCount</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
