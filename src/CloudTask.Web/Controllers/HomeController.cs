@@ -27,13 +27,20 @@ public class HomeController : Controller
         }
 
         var projects = await _api.GetProjectsAsync(token);
-        if (projects is null)
+
+        // The API rejected the token (expired), so make the user log in again
+        if (projects.StatusCode == 401)
         {
-            // The API rejected the token (expired), so make the user log in again
             return await SignOutAndRedirectAsync();
         }
 
-        return View(projects);
+        if (!projects.Success)
+        {
+            TempData["Error"] = projects.Error;
+            return View(new PagedDto<ProjectDto>(new List<ProjectDto>(), 0));
+        }
+
+        return View(projects.Data!);
     }
 
     public IActionResult Privacy()
@@ -44,7 +51,10 @@ public class HomeController : Controller
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public IActionResult Error()
     {
-        return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
+        return View(new ErrorViewModel
+        {
+            RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier
+        });
     }
 
     private async Task<IActionResult> SignOutAndRedirectAsync()
