@@ -1,10 +1,11 @@
+using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 using CloudTask.Web.Models;
 using CloudTask.Web.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.ComponentModel.DataAnnotations;
 
 namespace CloudTask.Web.Controllers;
 
@@ -47,6 +48,7 @@ public class ProjectsController : Controller
             return View(model);
         }
 
+        TempData["Success"] = "Project created.";
         return RedirectToAction("Details", new { id = result.Data!.Id });
     }
 
@@ -66,6 +68,12 @@ public class ProjectsController : Controller
             return NotFound();
         }
 
+        if (!project.Success)
+        {
+            TempData["Error"] = project.Error;
+            return RedirectToAction("Index", "Home");
+        }
+
         var tasks = await _api.GetTasksAsync(token, id);
 
         var vm = new ProjectDetailsViewModel
@@ -74,7 +82,7 @@ public class ProjectsController : Controller
             Tasks = tasks.Success ? tasks.Data!.Items : new List<TaskDto>(),
             // Only the owner may see tasks; the API answers 403 to everyone else
             TasksVisible = tasks.Success,
-            CurrentUserId = int.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value)
+            CurrentUserId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value)
         };
 
         return View(vm);
@@ -92,7 +100,11 @@ public class ProjectsController : Controller
             return await ExpiredAsync();
         }
 
-        if (!result.Success)
+        if (result.Success)
+        {
+            TempData["Success"] = "Task added.";
+        }
+        else
         {
             TempData["Error"] = result.Error;
         }
@@ -118,7 +130,11 @@ public class ProjectsController : Controller
             return await ExpiredAsync();
         }
 
-        if (!result.Success)
+        if (result.Success)
+        {
+            TempData["Success"] = action == "start" ? "Task started." : "Task completed.";
+        }
+        else
         {
             TempData["Error"] = result.Error;
         }

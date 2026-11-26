@@ -1,7 +1,4 @@
-using System.Collections.Generic;
 using System.Security.Claims;
-using System.Security.Policy;
-using System.Threading.Tasks;
 using CloudTask.Web.Models;
 using CloudTask.Web.Services;
 using Microsoft.AspNetCore.Authentication;
@@ -37,7 +34,17 @@ public class AccountController : Controller
             return View(model);
         }
 
-        var result = await _api.LoginAsync(model.Email, model.Password);
+        LoginResultDto? result;
+        try
+        {
+            result = await _api.LoginAsync(model.Email, model.Password);
+        }
+        catch (InvalidOperationException ex)
+        {
+            ModelState.AddModelError(string.Empty, ex.Message);
+            return View(model);
+        }
+
         if (result is null)
         {
             ModelState.AddModelError(string.Empty, "Invalid email or password.");
@@ -78,13 +85,6 @@ public class AccountController : Controller
         return RedirectToAction("Index", "Home");
     }
 
-    [HttpPost]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Logout()
-    {
-        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        return RedirectToAction("Login");
-    }
     [HttpGet]
     public IActionResult Register()
     {
@@ -108,6 +108,14 @@ public class AccountController : Controller
         }
 
         TempData["Message"] = "Account created. Please log in.";
+        return RedirectToAction("Login");
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Logout()
+    {
+        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         return RedirectToAction("Login");
     }
 }

@@ -18,7 +18,7 @@ public class HomeController : Controller
     }
 
     [Authorize]
-    public async Task<IActionResult> Index()
+    public async Task<IActionResult> Index(int page = 1)
     {
         var token = await HttpContext.GetTokenAsync("access_token");
         if (string.IsNullOrEmpty(token))
@@ -26,7 +26,7 @@ public class HomeController : Controller
             return await SignOutAndRedirectAsync();
         }
 
-        var projects = await _api.GetProjectsAsync(token);
+        var projects = await _api.GetProjectsAsync(token, page < 1 ? 1 : page);
 
         // The API rejected the token (expired), so make the user log in again
         if (projects.StatusCode == 401)
@@ -37,7 +37,7 @@ public class HomeController : Controller
         if (!projects.Success)
         {
             TempData["Error"] = projects.Error;
-            return View(new PagedDto<ProjectDto>(new List<ProjectDto>(), 0));
+            return View(new PagedDto<ProjectDto>(new List<ProjectDto>(), 1, 10, 0, 0));
         }
 
         return View(projects.Data!);

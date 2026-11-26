@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using CloudTask.Web.Models;
 
@@ -15,9 +16,17 @@ public class ApiClient
         _http = http;
     }
 
+    // Returns null for wrong credentials; throws InvalidOperationException if the API is down
     public async Task<LoginResultDto?> LoginAsync(string email, string password)
     {
-        var response = await _http.PostAsJsonAsync("api/auth/login", new { email, password });
+        var response = await SendRawAsync(
+            HttpMethod.Post, "api/auth/login", null, new { email, password });
+
+        if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
+        {
+            throw new InvalidOperationException(
+                "The service is unavailable right now. Please try again shortly.");
+        }
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
@@ -34,10 +43,10 @@ public class ApiClient
             new { email, displayName, password });
     }
 
-    public Task<ApiResult<PagedDto<ProjectDto>>> GetProjectsAsync(string token)
+    public Task<ApiResult<PagedDto<ProjectDto>>> GetProjectsAsync(string token, int page = 1)
     {
         return SendAsync<PagedDto<ProjectDto>>(
-            HttpMethod.Get, "api/projects?pageSize=50", token, null);
+            HttpMethod.Get, $"api/projects?page={page}&pageSize=10", token, null);
     }
 
     public Task<ApiResult<ProjectDetailDto>> GetProjectAsync(string token, int id)
@@ -107,6 +116,7 @@ public class ApiClient
         };
     }
 
+    // Network failures become a 503 response instead of an exception in every controller
     private async Task<HttpResponseMessage> SendRawAsync(
         HttpMethod method, string url, string? token, object? body)
     {
@@ -122,7 +132,20 @@ public class ApiClient
             request.Content = JsonContent.Create(body);
         }
 
-        return await _http.SendAsync(request);
+        try
+        {
+            return await _http.SendAsync(request);
+        }
+        catch (HttpRequestException)
+        {
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                Content = new StringContent(
+                    "{\"detail\":\"The service is unavailable right now. Please try again shortly.\"}",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        }
     }
 
     // Pulls the "detail" text out of a ProblemDetails response, with a safe fallback
