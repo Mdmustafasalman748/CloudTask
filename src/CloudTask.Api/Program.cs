@@ -1,3 +1,4 @@
+
 using System;
 using System.Text;
 using System.Text.Json.Serialization;
@@ -8,6 +9,7 @@ using CloudTask.Infrastructure;
 using CloudTask.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
@@ -126,6 +128,13 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Apply database migrations on startup when enabled.
+if (builder.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
+{
+    using var scope = app.Services.CreateScope();
+    scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
+}
+
 await RoleSeeder.SeedAsync(app.Services);
 
 app.UseExceptionHandler();
@@ -144,8 +153,10 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
-
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.UseCors("Frontend");
 
 app.UseRateLimiter();
