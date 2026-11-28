@@ -1,5 +1,3 @@
-
-using System;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
@@ -128,13 +126,14 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Apply database migrations on startup when enabled.
+// Off by default (tests, local runs). Docker Compose and Azure turn it on.
 if (builder.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
 {
     using var scope = app.Services.CreateScope();
     scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
 }
 
+// Roles must exist before anyone registers (runs after migrations)
 await RoleSeeder.SeedAsync(app.Services);
 
 app.UseExceptionHandler();
@@ -152,11 +151,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-
-if (!app.Environment.IsDevelopment())
+else
 {
+    // Containers in Development speak plain HTTP; Azure (Production) terminates TLS for us
     app.UseHttpsRedirection();
 }
+
 app.UseCors("Frontend");
 
 app.UseRateLimiter();
